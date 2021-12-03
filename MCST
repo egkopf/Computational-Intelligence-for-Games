@@ -1,0 +1,70 @@
+from kalah import Kalah
+import minimax
+import test_mcts
+import math
+from random import randint
+
+ITERATIONS = 1000
+
+def mcts_strategy(iterations):
+
+    def suggestedMove(initialPos): # Returns the move suggested by running MCTS with UCB2 for ITERATIONS. Assumes that the number of iterations
+        tree = {initialPos: [0.0, 0.0]} # Is at least as large as the number of moves from the initial position.
+
+        for i in range(0, ITERATIONS): # Number of iterations
+            stateLog = [initialPos]
+            currentState = initialPos # Keeps track of which state we are looking at
+            terminalFlag = 0
+
+            while currentState in tree: # Loop until a node is reached that has not yet been explored
+                moves = currentState.legal_moves()
+                ucbList = []
+
+                emptyFlag = 0
+
+                if moves == []: # This skips the step of checking next moves because we are already at a terminal node
+                    terminalFlag = 1
+                    break
+
+                for move in moves: # Check each legal move
+                    if emptyFlag == 0: 
+                        nextState = currentState.result(move)
+                        if not nextState in tree:
+                            currentState = nextState # Found a node that has not been played, will now break from loop
+                            stateLog.append(currentState)
+                            emptyFlag = 1
+                        else: # Has been played, let's calculate the UCB
+                            if currentState.next_player() == 0: 
+                                ucbList.append((tree[nextState][1] / tree[nextState][0]) + 0.85 * math.sqrt(math.log(tree[currentState][0]) / tree[nextState][0]))
+                            else:
+                                ucbList.append(tree[nextState][1] / tree[nextState][0] - 0.85 * math.sqrt(math.log(tree[currentState][0]) / tree[nextState][0]))
+
+                if emptyFlag == 0: # There was some node that has not yet been explored. Let's explore it
+                    if currentState.next_player() == 0:
+                        currentState = currentState.result(moves[ucbList.index(max(ucbList))])
+                    else:
+                        currentState = currentState.result(moves[ucbList.index(min(ucbList))])
+                    stateLog.append(currentState)
+                                   
+            if terminalFlag == 0:           # Now we are at a state not in the tree
+                tree[currentState] = [0.0, 0.0]
+
+                while not currentState.game_over(): # Random playout
+                    moves = currentState.legal_moves()
+                    currentState = currentState.result(moves[randint(0, len(moves) - 1)])
+            
+            value = currentState.winner()       # Now game is over
+            for state in stateLog:
+                tree[state][0] += 1.0
+                tree[state][1] += (value + 1.0) / 2.0
+
+        bestMove = initialPos.legal_moves()[0]  # Assumes theres a move LOL
+        currentPlayer = initialPos.next_player()
+
+        for move in initialPos.legal_moves(): # Find the best node as dictated by UCB!
+            if tree[initialPos.result(move)][0] > tree[initialPos.result(bestMove)][0]:
+                bestMove = move
+                    
+        return bestMove  
+    
+    return suggestedMove
