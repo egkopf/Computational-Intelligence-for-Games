@@ -1,0 +1,188 @@
+import sys
+from itertools import combinations
+from scipy import optimize
+
+def barsToTroops(pointValues, units, bars): # Given a list of the point values of each battlefield and "bars" locations to represent how many... 
+    battlefields = len(pointValues)  # ...units are allocated for each battlefield, returns the number of troops allocated to each battlefield
+    troops = [bars[0] - 1]  
+    for barIndex in range(1, battlefields - 1):
+        troops.append(bars[barIndex] - bars[barIndex - 1] - 1)
+    troops.append(units + battlefields - 1 - bars[battlefields - 2])
+    return tuple(troops)
+
+def findActions(pointValues, units): # Given a list of the point values of each battlefield and the number of total units,
+    battlefields = len(pointValues)  # returns all the possible actions an player can make
+    actions = []
+    for i in combinations(list(range(1, units + battlefields)), battlefields - 1):
+        actions.append(barsToTroops(pointValues, units, i))
+    return actions
+
+def evaluateTwoActions(pointValues, playerOneAction, playerTwoAction): # Gives the point total for p1 given two actions under the 
+    sum = 0.0   #... standard scoring scheme where the person who allocates more troops to a battlefield wins the number of points
+    for i in range(0, len(playerOneAction)):    # actions are stored as tuples.
+        if playerOneAction[i] > playerTwoAction[i]:
+            sum += pointValues[i]
+        elif playerTwoAction[i] == playerOneAction[i]:
+            sum += pointValues[i] / 2.0
+        
+    return sum
+
+def evaluateTwoActionsLottery(pointValues, playerOneAction, playerTwoAction): # Gives the point total for p1 given two actions under the
+    p1Sum = 0.0         #... lottery scoring scheme with actions given as tuples
+    for i in range(0, len(playerOneAction)):
+        if playerOneAction[i] == 0 and playerTwoAction[i] == 0:
+            p1Sum += pointValues[i] * 0.5
+        else:
+            p1Sum += pointValues[i] * playerOneAction[i] * playerOneAction[i] / (playerOneAction[i] * playerOneAction[i] + playerTwoAction[i] * playerTwoAction[i])
+    return p1Sum 
+
+def createEmptyTable(pointValues, units): # Creates an empty square table where the size of the side is the number of pure actions
+    table = []
+    actions = findActions(pointValues, units)
+    combos = len(actions)
+    for side in range(0, combos): # FILL WITH 0s
+        table.append([0] * combos)
+    return table
+
+def createEVTable(pointValues, units, function): # Fills all of the indeces in the table with their game value
+    table = createEmptyTable(pointValues, units) # Function can be "wins", "lottery", or "score". Only assumes that the functions it calls are working properly
+    actions = findActions(pointValues, units)
+    combos = len(actions)
+    avgScore = sum(pointValues) / 2.0
+
+    for row in range(0, combos):
+        for col in range(0, combos):
+            if function == "--lottery":
+                table[row][col] = evaluateTwoActionsLottery(pointValues, actions[row], actions[col])
+            else:
+                table[row][col] = evaluateTwoActions(pointValues, actions[row], actions[col]) # FILL WITH EV
+                if function == "--win":
+                    if table[row][col] > avgScore:
+                        table[row][col] = 1.0
+                    elif table[row][col] < avgScore:
+                        table[row][col] = 0.0
+                    else:
+                        table[row][col] = 0.5
+    return table
+
+def isMixedStrategyAnEquilibriumBetter(mixedStrategy, units, pointValues, tolerance, function, actions): # Returns whether or not the mixed strategy is an equilibrium (verify)
+    avgScore = sum(pointValues) / 2.0   # assumes that the number of units and point values are according to specs, that the functions and actions are also in line with specifications
+    ev = avgScore
+    if function == "--win":
+        ev = 0.5
+
+    for i in range(0, len(actions)):
+        testEv = 0.0
+        for j in range(0, len(actions)):
+
+            if function == "--score":
+                testEv += mixedStrategy[j] * evaluateTwoActions(pointValues, actions[i], actions[j])
+            elif function == "--lottery":
+                testEv += mixedStrategy[j] * evaluateTwoActionsLottery(pointValues, actions[i], actions[j])
+            else: 
+                if evaluateTwoActions(pointValues, actions[i], actions[j]) > avgScore:
+                    testEv += mixedStrategy[j]
+                elif evaluateTwoActions(pointValues, actions[i], actions[j]) == avgScore:
+                    testEv += mixedStrategy[j] * 0.5
+
+        if testEv - tolerance > ev:
+            return 1    # 1 INDICATES THAT THERE IS SOME PURE STRATEGY FOR P1 SUCH THAT THE EV IS HIGHER THAN THE MIXED STRATEGY
+    return 0       
+
+def printEq(actions, eq, tolerance): # helps cleanly print out the equilibrium in the format specified by the assignment.
+    acts = len(actions) # assumes that the eq is of the format calculated by the eq function and that the actions are generated by the actions function
+    for i in range (0, acts):
+        if eq[i] > tolerance:
+            for num in actions[i]:
+                print(str(num)+",", end="")
+            print(eq[i])
+    
+def findEquilibrium(pointValues, units, function): # the main "find" function using linear programming. Assumes that the point values, units,
+    table = createEVTable(pointValues, units, function) # and function are according to specs. Returns the equilibrium strategy
+    actions = findActions(pointValues, units)
+
+    rows = len(actions)
+    cols = rows
+
+    for i in range(0, rows):
+        for j in range(0, cols):
+            table[i][j] -= sum(pointValues)
+
+    bounds = (0.0, float(units))
+    b_ub = [-1.0] * cols
+    c = [1.0] * rows
+
+    result = optimize.linprog(c, table, b_ub, None, None, bounds)
+    value = 1.0 / result.fun
+
+    return [xi * value for xi in result.x]
+
+def readLineOfStrategy(line):
+    index = 0
+    vals = []
+    currentVal = 0
+    while line[index + 1] != ".":
+        if line[index] == ",":
+            vals.append(currentVal)
+            currentVal = 0
+        else:
+            currentVal *= 10
+            currentVal += int(line[index])
+        index += 1
+    prob = float(line[index:])
+    return(vals, prob)
+
+def main():     # MAIN FUNCTION - assumes input is the format as specified on the syllabus.
+    args = sys.argv[1:]
+
+    tolerance = 0.00001
+    units = 0
+    fieldVals = []
+    function = ""
+
+    if args[1] == "--tolerance":
+        tolerance = float(args[2])
+        del args[1:3]
+    
+    if args[0] == '--find': #Win, lottery, score
+        function = args[1]
+        units = int(args[3])
+        for arg in range (4, len(args)):
+            fieldVals.append(int(args[arg]))
+
+        actions = findActions(fieldVals, units)
+        eq = findEquilibrium(fieldVals, units, function)
+        printEq(actions, eq, tolerance)
+        
+    else: #VERIFY
+        function = args[1]
+
+        for arg in range(2, len(args)):
+            fieldVals.append(int(args[arg]))
+
+        units = 0
+
+        whiteboard = []
+        for line in sys.stdin:
+            whiteboard.append(str(line))
+        
+        units = sum(readLineOfStrategy(whiteboard[0])[0])
+
+        actions = findActions(fieldVals, units)
+        mixedStrategy = [0.0] * len(actions)
+
+        for line in whiteboard:
+            parsedLine = readLineOfStrategy(line)
+            action = tuple(parsedLine[0])
+
+            dex = actions.index(action)
+            prob = parsedLine[1]
+
+            mixedStrategy[dex] = prob
+        
+        table = createEVTable(fieldVals, units, function)
+        
+        if isMixedStrategyAnEquilibriumBetter(mixedStrategy, units, fieldVals, tolerance, function, actions) == 0:
+            print("PASSED")
+    
+main()
