@@ -1,0 +1,204 @@
+import sys
+from itertools import combinations 
+
+movesOfLengthFour = [[1,2,3,4], [1,2,3,5], [1,2,3,6], [1,2,4,5]]
+
+def aButNotB(a, b): # Finds the symmetric difference of two lists a and b
+    newList = []
+    for tile in a:
+        if tile not in b:
+            newList.append(tile)
+    return newList
+
+movesDict = {}
+
+def populateMovesDict(): # Assumes an empty movesDict. Fills in moveDict with all the possible moves for each roll given a state
+    for i in range(1, 10):
+        combs = combinations([1,2,3,4,5,6,7,8,9], i)
+        for comb in combs:
+            movesList = [[]] * 12
+            for k in range(1, 13):
+                movesList[k-1] = findMoves(list(comb), k)
+            movesDict[createKey(list(comb))] = movesList
+
+def findMoves(numbers, target): # Finds all legal moves given some tiles and a target sum (a roll). Assumes that the numbers is some permutation of 123456789
+    moves = []                  # And the target is between 1 and 12
+    for tile in numbers:    #Moves of length 1
+        if tile == target:
+            moves.append([tile])
+    
+    for i in range(2, 4):
+        combs = combinations(numbers, i)    
+        for comb in combs:
+            if sum(comb) == target:
+                moves.append(list(comb))
+
+    for move in movesOfLengthFour:          #Moves of length 4
+        if sum(move) == target:
+            contains = 1
+            for tile in move:
+                if not tile in numbers:
+                    contains = 0
+            if contains == 1:
+                moves.append(move)
+    return moves
+
+def createKey(tiles):       # Joins tiles into a string. Assumes the tiles is some sub-array of 123456789.
+    return ''.join(str(tile) for tile in tiles)
+
+stateStorage = {}
+evStorage = {}
+
+def populateEvDict():       # Fills in a dictionary with empty (0) arrays for each of the twelve rolls for each possible tile state
+    for i in range(1, 10):
+        combs = combinations([1,2,3,4,5,6,7,8,9], i)
+        for comb in combs:
+            evStorage[createKey(list(comb))] = [0] * 12
+
+def findExpectedWinsP2(numbers, p1score):       # Takes some array representing an arrangement of tiles and some score for player 1 assuming each follows the specifications.
+    populateEvDict()        # Returns the expected win value from 0 to 1 given such an arrangement of tiles and a player 1 score.
+    if sum(numbers) <= 6:
+        return 1.0/6.0*(findExpectedWinsP2Helper(numbers, 1, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 2, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 3, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 4, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 5, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 6, p1score))
+    else:
+        return 1.0/36.0*(findExpectedWinsP2Helper(numbers, 2, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(numbers, 3, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(numbers, 4, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(numbers, 5, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(numbers, 6, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 7, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(numbers, 8, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(numbers, 9, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(numbers, 10, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(numbers, 11, p1score)) + 1.0/36.0*(findExpectedWinsP2Helper(numbers, 12, p1score))
+
+def findBestMoveP2(numbers, p1score, roll): # Takes some array representing an arrangement of tiles, a roll, and some score for player 1 assuming each follows the specifications.
+    populateEvDict()            # Returns the best move given the tile arrangement, roll, and player1 score.
+    movesScores = []
+    if sum(numbers) <= 6:
+        movesScores.append(1.0/6.0*(findExpectedWinsP2Helper(numbers, 1, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 2, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 3, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 4, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 5, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 6, p1score)))
+    else:
+        movesScores.append(1.0/36.0*(findExpectedWinsP2Helper(numbers, 2, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(numbers, 3, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(numbers, 4, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(numbers, 5, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(numbers, 6, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(numbers, 7, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(numbers, 8, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(numbers, 9, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(numbers, 10, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(numbers, 11, p1score)) + 1.0/36.0*(findExpectedWinsP2Helper(numbers, 12, p1score)))
+    tileKey = createKey(numbers)
+    
+    return(stateStorage[tileKey][roll-1])
+
+def findBestMoveP1(numbers, roll):  # Takes some list representing an arrangment of tiles and a roll, assuming each follows the specification.
+                                        # Returns the best move given the arragement and roll
+    for i in range(1, sum(numbers) + 1):
+        rollHolder[i] = findExpectedWinsP2([1,2,3,4,5,6,7,8,9], i)
+        stateStorage.clear()
+    
+    possibleMoves = movesDict[createKey(numbers)][roll-1]
+    bestMoveScore = 0
+    bestMove = 0
+    
+    for move in possibleMoves:
+        newTiles = aButNotB(numbers, move)
+
+        if sum(newTiles) <= 6:
+            score = 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 1)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 2)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 3)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 4)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 5)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 6))
+        else:
+            score =  1.0/36.0*(findExpectedWinsP1Helper(newTiles, 2)) + 1.0/18.0*(findExpectedWinsP1Helper(newTiles, 3)) + 1.0/12.0*(findExpectedWinsP1Helper(newTiles, 4)) + 1.0/9.0*(findExpectedWinsP1Helper(newTiles, 5)) + 5.0/36.0*(findExpectedWinsP1Helper(newTiles, 6)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 7)) + 5.0/36.0*(findExpectedWinsP1Helper(newTiles, 8)) + 1.0/9.0*(findExpectedWinsP1Helper(newTiles, 9)) + 1.0/12.0*(findExpectedWinsP1Helper(newTiles, 10)) + 1.0/18.0*(findExpectedWinsP1Helper(newTiles, 11)) + 1.0/36.0*(findExpectedWinsP1Helper(newTiles, 12))
+        if score > bestMoveScore:
+            bestMove = move
+            bestMoveScore = score
+
+    return bestMove
+
+def findExpectedWinsP2Helper(numbers, target, p1score): # Helper method directly or indirectly used by the above three methods.
+    stateKey = createKey(numbers)               # Takes an arrangement of tiles as a list, a target value (roll) and a player1 score assuming each is in line with the specifications
+    if stateKey == '':                      # Assumes populated ev and state storage dictionaries
+        return 1.0
+
+    # LOOKING UP THE STATE/ROLL EV
+    if evStorage[stateKey][target - 1] != 0:
+        return evStorage[stateKey][target - 1]
+
+    if sum(numbers) < p1score:                   #If the score is already below p1's score, we have won - send up a 1
+       evStorage[stateKey][target - 1] = 1.0
+       return 1.0
+    
+    possibleMoves = []
+    if not numbers == []:
+        possibleMoves = movesDict[createKey(numbers)][target-1]     #Find all possible moves from a state
+        
+    if possibleMoves == []:      #If there are no possible moves, determine whether the state is a
+        if sum(numbers) > p1score:          #win, loss, or tie and send the corresponding value back up
+            evStorage[stateKey][target - 1] = 0.0
+            return 0.0
+        else:
+            evStorage[stateKey][target - 1] = 0.5
+            return 0.5
+
+    
+    movesScores = []
+    # know your roll
+    for move in possibleMoves:
+        newTiles = aButNotB(numbers, move)      #calculate new state
+        if sum(newTiles) <= 6:
+            movesScores.append(1.0/6.0*(findExpectedWinsP2Helper(newTiles, 1, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 2, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 3, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 4, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 5, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 6, p1score)))
+        else:
+            movesScores.append(1.0/36.0*(findExpectedWinsP2Helper(newTiles, 2, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(newTiles, 3, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(newTiles, 4, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(newTiles, 5, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(newTiles, 6, p1score)) + 1.0/6.0*(findExpectedWinsP2Helper(newTiles, 7, p1score)) + 5.0/36.0*(findExpectedWinsP2Helper(newTiles, 8, p1score)) + 1.0/9.0*(findExpectedWinsP2Helper(newTiles, 9, p1score)) + 1.0/12.0*(findExpectedWinsP2Helper(newTiles, 10, p1score)) + 1.0/18.0*(findExpectedWinsP2Helper(newTiles, 11, p1score)) + 1.0/36.0*(findExpectedWinsP2Helper(newTiles, 12, p1score)))
+    #next state
+
+    maxScore = max(movesScores)
+    maxIndex = movesScores.index(max(movesScores))
+
+    newTileKey = createKey(aButNotB(numbers, possibleMoves[maxIndex]))
+    
+    if stateKey in stateStorage:              #if the state has been visited but not the roll
+        stateStorage[stateKey][target - 1] = possibleMoves[maxIndex]
+    else:
+        newStateStore = [0] * 13            #if the state has never been visited
+        newStateStore[target - 1] = possibleMoves[maxIndex]
+        stateStorage[stateKey] = newStateStore
+
+    evStorage[stateKey][target - 1] = maxScore
+    return(maxScore)
+
+rollHolder = [0] * 47
+
+def findExpectedWinsP1(numbers):  # takes a sublist of numbers 123456789 and returns the expected wins for p1 for that state.
+    for i in range(1, sum(numbers) + 1):
+        rollHolder[i] = findExpectedWinsP2([1,2,3,4,5,6,7,8,9], i)
+        stateStorage.clear()
+
+    
+    if sum(numbers) <= 6:
+        return 1.0/6.0*(findExpectedWinsP1Helper(numbers, 1)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 2)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 3)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 4)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 5)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 6))
+    else:
+        return 1.0/36.0*(findExpectedWinsP1Helper(numbers, 2)) + 1.0/18.0*(findExpectedWinsP1Helper(numbers, 3)) + 1.0/12.0*(findExpectedWinsP1Helper(numbers, 4)) + 1.0/9.0*(findExpectedWinsP1Helper(numbers, 5)) + 5.0/36.0*(findExpectedWinsP1Helper(numbers, 6)) + 1.0/6.0*(findExpectedWinsP1Helper(numbers, 7)) + 5.0/36.0*(findExpectedWinsP1Helper(numbers, 8)) + 1.0/9.0*(findExpectedWinsP1Helper(numbers, 9)) + 1.0/12.0*(findExpectedWinsP1Helper(numbers, 10)) + 1.0/18.0*(findExpectedWinsP1Helper(numbers, 11)) + 1.0/36.0*(findExpectedWinsP1Helper(numbers, 12))
+
+def findExpectedWinsP1Helper(numbers, target):  # helper method for the state represented by nuumbers and the roll represented by target
+    #LOOK UP ROLL/STATE EV!!!!!!!!       # assumes populated ev and state storage dictionaries
+
+    possibleMoves = []
+    if not numbers == []:
+        possibleMoves = movesDict[createKey(numbers)][target-1]          #Find all possible moves from a state
+
+    if possibleMoves == []:      #If there are no possible moves, 
+        return 1.0 - rollHolder[sum(numbers)]          #return 1 minus the expected wins for P2 given P1's score
+
+    movesScores = []
+    for move in possibleMoves:
+        newTiles = aButNotB(numbers, move)       # new state after move has been made
+        if sum(newTiles) <= 6:
+            movesScores.append(1.0/6.0*(findExpectedWinsP1Helper(newTiles, 1)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 2)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 3)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 4)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 5)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 6)))
+        else:
+            movesScores.append(1.0/36.0*(findExpectedWinsP1Helper(newTiles, 2)) + 1.0/18.0*(findExpectedWinsP1Helper(newTiles, 3)) + 1.0/12.0*(findExpectedWinsP1Helper(newTiles, 4)) + 1.0/9.0*(findExpectedWinsP1Helper(newTiles, 5)) + 5.0/36.0*(findExpectedWinsP1Helper(newTiles, 6)) + 1.0/6.0*(findExpectedWinsP1Helper(newTiles, 7)) + 5.0/36.0*(findExpectedWinsP1Helper(newTiles, 8)) + 1.0/9.0*(findExpectedWinsP1Helper(newTiles, 9)) + 1.0/12.0*(findExpectedWinsP1Helper(newTiles, 10)) + 1.0/18.0*(findExpectedWinsP1Helper(newTiles, 11)) + 1.0/36.0*(findExpectedWinsP1Helper(newTiles, 12)))
+    
+    return(max(movesScores))
+
+def intToList(num): # method used for parsing input. assumes that the input is a number and returns a list with each digit as an entry
+    lst = []
+    for i in range(len(num)):
+        lst.append(int(num[i]))
+    return lst
+
+def main():     # main function! assumes that the input is of a form specified by the assignment.
+    args = sys.argv[1:]
+    populateMovesDict()
+    if args[0] == '--one':
+        if args[1] == '--move':
+            print(findBestMoveP1(intToList(args[2]), int(args[3])))
+        else:
+            print("{0:.6f}".format(round(findExpectedWinsP1(intToList(args[2])),6)))
+    else:
+        if args[1] == "--move":
+            print(findBestMoveP2(intToList(args[2]), int(args[3]), int(args[4])))
+        else:
+            print("{0:.6f}".format(round(findExpectedWinsP2(intToList(args[2]), int(args[3])),6)))
+
+main()
+
