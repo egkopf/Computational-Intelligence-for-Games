@@ -1,0 +1,141 @@
+import sys, queue
+my_list = []
+src = sys.stdin
+sys.setrecursionlimit(2500)
+
+#This method reads some integer, digit by digit: used to read the integers in the first two lines of the project
+#stop represents the character following the integer
+def readint(stop):
+  sum = 0
+  while 1:
+    digit = src.read(1)
+    if digit == stop:
+      return sum
+    digit = int(digit)
+    sum = (sum * 10) + digit
+
+rows = readint(" ")
+cols = readint("\n")
+starty = readint(" ")
+startx = readint("\n")
+
+level = 0
+visited = [[0 for i in range(cols)] for j in range(rows)]
+
+for row in range(rows):
+  newrow = []
+  for col in range(cols):
+    elm = src.read(1)
+    if elm == '.':
+      newrow.append(0)
+    elif elm == '*': 
+      newrow.append(1)
+    elif elm == "\n":
+      l = 1
+    else:
+      newrow.append(int(elm))
+  my_list.append(newrow)
+  src.read(1)
+
+class Game:
+  def __init__(self, grid):
+    self.grid = grid
+
+#Executes the move fed into the parameter game, takes the game as the other parameter, assumes that the move is a valid move
+#returns a game in which the move has been executed
+def makeMove(game, move):
+  amount = game.grid[move[0]][move[1]]
+  game.grid[move[0]][move[1]] = 0
+  for i in range(1, amount + 1):
+    game.grid[move[0]+i*move[2]][move[1]+i*move[3]] = -1
+  return game
+
+#Executes the reverse of the move fed into the parameter game, takes the game as the other parameter, assumes that the move to be undone is a valid move that has most recently been executed
+#Returns a game in which the move has been executed
+def undoMove(game, move, size):
+  game.grid[move[0]][move[1]] = size
+  for i in range(1, size + 1):
+    game.grid[move[0]+i*move[2]][move[1]+i*move[3]] = 0
+  return game
+
+#Goes through the tree of possible moves, backtracking if a dead end is reached. Takes the current location as input
+#and keeps track of the past moves in the gameLog
+def backtrack(game, curRow, curCol, gameLog):
+  crates = findCrateTops(game, curRow, curCol)
+  moves = []
+  for crate in crates:
+    if crate[0] == -1:
+      for move in gameLog:
+        print(move[0], move[1], move[2], move[3])
+      sys.exit(0)
+    validTips = getValidMoves(game, crate[0], crate[1])
+    for move in validTips:
+      moves.append(move)
+
+  if len(moves) == 0:
+    return    
+
+  for move in moves:
+    moveSize = game.grid[move[0]][move[1]]
+    makeMove(game, move)
+    gameLog.append(move)
+    backtrack(game, move[2] + move[0], move[3] + move[1], gameLog)
+    gameLog.remove(move)
+    undoMove(game, move, moveSize)
+  return
+
+directionMap = {0:(-1,0), 1:(1,0), 2:(0,-1), 3:(0,1)}
+
+#Given some position row and col, returns the locations of all crate stacks that can be moved to
+#Assumes a valid board format 
+def findCrateTops(game, row, col):
+  global level, visited
+  crates = []
+  level += 1
+
+  q = queue.Queue()
+  visited[row][col] = level
+  q.put((row, col))
+  
+  while (not q.empty()):
+    space = q.get()
+    if game.grid[space[0]][space[1]] == 1:
+      return [(-1,-1)]
+    
+    if game.grid[space[0]][space[1]] >= 2:
+      crates.append(space)
+    
+    for dr in range(4):
+      newr = space[0]+directionMap[dr][0]
+      newc = space[1]+directionMap[dr][1]
+      if 0 <= newr < rows and 0 <= newc < cols:
+        if visited[newr][newc] != level and game.grid[newr][newc] != 0:
+          visited[newr][newc] = level
+          q.put((newr, newc))
+  
+  return crates
+
+#Assumes that the row and col are on a space with a tower. Checks the four directions and returns the moves which are valid.
+#Takes the row and column as input
+def getValidMoves(game, row, col): 
+  flag = 1
+  allmoves = []
+  height = game.grid[row][col]
+  for dr in range(4):
+    for j in range(1, height + 1):
+      newr = row + directionMap[dr][0]*j
+      newc = col + directionMap[dr][1]*j
+      if (not (0 <= newr < rows and 0 <= newc < cols)) or game.grid[newr][newc]!=0:
+        flag = 0
+        break
+    if flag == 1:
+      allmoves.append((row, col, directionMap[dr][0], directionMap[dr][1]))
+    flag = 1
+  return allmoves
+
+def main():
+  game = Game(my_list)
+  backtrack(game, starty, startx, [])
+  
+if __name__ == "__main__":
+  main()
