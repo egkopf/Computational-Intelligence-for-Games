@@ -1,0 +1,242 @@
+# MultiWar. An original game by Ethan Kopf.
+
+import sys
+import random
+from random import randint
+import math
+
+class Multiwar:
+    def __init__(self, currentPlayer, offensivePlayer, turns, p0bank, p1bank, battleArena):
+        self.currentPlayer = currentPlayer # index of player currently to make a move
+        self.offensivePlayer = offensivePlayer # index of player currently on offense
+        self.turns = turns # number of turns gone by in the game (a turn is a battle)
+        self.p0bank = p0bank # battle units owned by player 0
+        self.p1bank = p1bank # battle units owned by player 1
+        self.battleArena = battleArena # list of two elements. offensive unit goes in 0, defensive unit goes in 1
+
+    def is_initial(self): # is the position the initial position
+        return self.turns == 0
+
+    def stateAsTuple(self):
+        return (self.currentPlayer, self.offensivePlayer, self.turns, tuple(self.p0bank), tuple(self.p1bank), tuple(self.battleArena))
+    
+    # Return a new state in which the current player has selected the specified unit for battle
+    # Swaps whose turn it is only if the selector is offensive player because defensive player goes again after choosing unit
+    def selectUnit(self, unit):
+        if self.currentPlayer == self.offensivePlayer:
+            if self.currentPlayer == 0:
+                return Multiwar(abs(self.currentPlayer - 1), self.offensivePlayer, self.turns, self.p0bank[:self.p0bank.index(unit)]+self.p0bank[self.p0bank.index(unit)+1:], self.p1bank, [unit, self.battleArena[1]])
+            return Multiwar(abs(self.currentPlayer - 1), self.offensivePlayer, self.turns, self.p0bank, self.p1bank[:self.p1bank.index(unit)]+self.p1bank[self.p1bank.index(unit)+1:], [unit, self.battleArena[1]])
+        else:
+            if self.currentPlayer == 0:
+                return Multiwar(self.currentPlayer, self.offensivePlayer, self.turns, self.p0bank[:self.p0bank.index(unit)]+self.p0bank[self.p0bank.index(unit)+1:], self.p1bank, [self.battleArena[0], unit])
+            return Multiwar(self.currentPlayer, self.offensivePlayer, self.turns, self.p0bank, self.p1bank[:self.p1bank.index(unit)]+self.p1bank[self.p1bank.index(unit)+1:], [self.battleArena[0], unit])
+
+    # Return (but not play) a random unit from player 0 or 1 (bank)'s bank
+    def randomUnit(self, bank):
+        randomIndex = random.randint(0, len(bank)) - 1
+        return bank[randomIndex]
+    
+    # Returns all legal units for the current player to choose from
+    # Precondition: there exist legal moves for current player to play
+    # Reverses list to maximize AB pruning
+    def legal_moves(self):
+        if self.currentPlayer == 0:
+            moves = list(set(self.p0bank))
+        else:
+            moves = list(set(self.p1bank))
+
+        moves.reverse()
+        return moves
+
+    # Is the position a terminal position or not
+    def isTerminal(self):
+        return (self.p0bank == [] or self.p1bank == [])
+
+    # Which player is the winner
+    # Precondition: self is a terminal state
+    def winner(self):
+        if self.p0bank == []:
+            return 1
+        else:
+            return 0
+    
+    # Returns the state following the result of the current battle
+    # Assumes the battle arena is full after both players have chosen their unit to fight
+    # Precondition: current player is the defensive player
+    # Postcondition: current player remains unchanged, but is now the offensive player 
+    def newStateAfterBattle(self, winner):
+        if winner == 0:
+            newBank = self.battleArena + self.p0bank
+            newBank.sort() # sort ensures that equal states will be recognized
+            return Multiwar(self.currentPlayer, abs(self.offensivePlayer - 1), self.turns + 1, newBank, self.p1bank, [0,0])
+        newBank = self.battleArena + self.p1bank
+        newBank.sort()
+        return Multiwar(self.currentPlayer, abs(self.offensivePlayer - 1), self.turns + 1, self.p0bank, newBank, [0,0])
+
+    # Finds the probability that player 0 wins the battle
+    # Battle arena must be full and defensive player must be current player
+    def battle(self):
+        p0sum = sum(self.p0bank)
+        p1sum = sum(self.p1bank)
+        if self.offensivePlayer == 0:
+            if self.battleArena[0] == 0 or self.battleArena[1] == 0: # guard! there should never be a 0 in the arena when battle is called
+                print("-Error: invalid battle arena-")
+                exit()
+            return (p0sum*(self.battleArena[0]-1)+self.turns) / (p0sum*(self.battleArena[0]-1)+self.turns+(p1sum*self.battleArena[1]))
+        # subtracted from 1 to represent p0's probability, since p1 is on offense
+        return 1 - (p1sum*(self.battleArena[0]-1)+self.turns) / (p1sum*(self.battleArena[0]-1)+self.turns+(p0sum*self.battleArena[1])) 
+
+# Transposition table: a dictionary in which the key is the position and the value is (value, move, bound code) where
+# the bound code is 0 if the value is exact, 1 if upper bound and 2 if lower bound
+# There is no depth stored in the transposition table because the number of turns gone by is part of the state in multiwar 
+# and it affects the game mechanics, so the same state can only be reached at the same depth
+def alphabeta(alpha, beta, pos, depth, h, table):
+    
+    # If the position is terminal or the specified depth has been reached, return the heuristic value
+    if pos.isTerminal() or depth == 0:
+        return (h(pos), None)
+    
+    if pos.stateAsTuple() in table.keys(): # looking up value in transposition table (allows AB to go a few levels deeper)
+
+        value = table[pos.stateAsTuple()][0]
+        move = table[pos.stateAsTuple()][1]
+        boundCode = table[pos.stateAsTuple()][2]
+
+        if boundCode == 0: # value is equal, depth is equal. return the value
+            return (value, move)
+        if boundCode == 1: # value is an upper bound
+            if value < alpha: # if the upper bound is below the possible range:
+                return (alpha, None) # return alpha because it cannot possibly be higher than alpha
+                # if this state is outside the AB range, it can return the move None because it will never be used
+        else: # it is a lower bound
+            if value > beta: # if the lower bound is above the possible range:
+                return (beta, None) # return beta because it cannot possibly be lower than beta
+
+    '''
+    The following is split into four cases depending on which player's turn it is and which player is on offense
+    When it is p0's turn it is a max node and when it is p1's turn it is a min node
+    When the offensive player is making a move, there is no random action following the choice so it returns one minimax call
+    When the defensive player is making a move, there is a battle playout following the choice so it returns two minimax calls,
+    weighted by the probability of each outcome (calculated by the battle formula)
+    '''
+
+    # Player is choosing a unit to go on offense for battle
+    # No random event following choice, so simply looks at pure minimax values for possible next states
+    if pos.offensivePlayer == pos.currentPlayer:
+        if pos.currentPlayer == 0: # max node
+            best_value = -1
+            best_move = None
+            for move in pos.legal_moves(): # check all possible next states
+                child = pos.selectUnit(move)
+                mm = alphabeta(alpha, beta, child, depth - 1, h, table)[0] # calculate minimax value
+                if mm > best_value:
+                    if mm >= beta: # add value to tt, with lower bound code
+                        table[pos.stateAsTuple()] = (best_value, best_move, 2) 
+                        return (mm, move)
+                    best_value = mm
+                    alpha = max(alpha, best_value)
+                    best_move = move
+            table[pos.stateAsTuple()] = (best_value, best_move, 0) # add value to tt, equal value
+            return (best_value, best_move)
+
+        # Player 1 is choosing a unit to go on offensive for battle. min node
+        best_value = float('inf')
+        best_move = None
+        for move in pos.legal_moves():
+            child = pos.selectUnit(move)
+            mm = alphabeta(alpha, beta, child, depth - 1, h, table)[0]
+            if mm < best_value:
+                if mm <= alpha: # add value to tt, with upper bound code
+                    table[pos.stateAsTuple()] = (best_value, best_move, 1)
+                    return (mm, move)
+                best_value = mm
+                beta = min(beta, best_value)
+                best_move = move
+        table[pos.stateAsTuple()] = (best_value, best_move, 0) # add value to tt, equal value
+        return (best_value, best_move)
+        
+    # Current player is defensive player. For player 0, choose the move that maximizes the sum of the two possible states following the
+    # choice of defensive unit, weighted by the probability of that outcome.
+    if pos.currentPlayer == 0:
+        best_value = -1
+        best_move = None
+        for move in pos.legal_moves():
+            child = pos.selectUnit(move)
+            prob = child.battle()
+            mm = (prob) * alphabeta(alpha, beta, child.newStateAfterBattle(0), depth - 1, h, table)[0] + (1-prob) * alphabeta(alpha, beta, child.newStateAfterBattle(1), depth - 1, h, table)[0]
+            if mm > best_value:
+                if mm >= beta:
+                    table[pos.stateAsTuple()] = (best_value, best_move, 2)
+                    return (mm, move)
+                best_value = mm
+                alpha = max(alpha, best_value)
+                best_move = move
+        table[pos.stateAsTuple()] = (best_value, best_move, 0)
+        return (best_value, best_move)
+
+    # For player 1, choose the move that minimizes the sum of the two possible states following the choice of defensive unit, 
+    # weighted by the probability of that outcome.
+    best_value = float('inf')
+    best_move = None
+    for move in pos.legal_moves():
+        child = pos.selectUnit(move)
+        prob = child.battle()
+        mm = (prob) * alphabeta(alpha, beta, child.newStateAfterBattle(0), depth - 1, h, table)[0] + (1 - prob) * alphabeta(alpha, beta, child.newStateAfterBattle(1), depth - 1, h, table)[0]
+        if mm < best_value:
+            if mm <= alpha:
+                table[pos.stateAsTuple()] = (best_value, best_move, 1)
+                return (mm, move)
+            best_value = mm
+            beta = min(beta, best_value)
+            best_move = move
+    table[pos.stateAsTuple()] = (best_value, best_move, 0)
+    return (best_value, best_move)
+
+# considers two factors: sum of banked units' strengths and number of units in bank
+# number of units is weighted by two because the range of sum is (0,108) and the number of units' range is (0,10)
+def simpleSumHeuristic(pos):
+    sum = 0
+    for unit in pos.p0bank:
+        sum += unit
+    count = len(pos.p0bank)
+
+    return sum + 2 * count
+
+# simulated a game between two agents, given by p0strategy and p1strategy
+def simulator(p0strategy, p1strategy):
+    game = Multiwar(0, 0, 0, [2,3,4,5,6,7,8,9,10], [2,3,4,5,6,7,8,9,10], [0,0])
+
+    while not game.isTerminal():
+        runBattle = False
+        if game.currentPlayer != game.offensivePlayer: # check if a battle will need to be run after this move
+            runBattle = True
+
+        if game.currentPlayer == 0: # select move based on strategy of p0 or p1
+            game = game.selectUnit(p0strategy(game))
+        else:
+            game = game.selectUnit(p1strategy(game))
+
+        if runBattle:
+            prob = game.battle()
+            if random.random() < prob: # choose winner of battle
+                winner = 0
+            else:
+                winner = 1
+            game = game.newStateAfterBattle(winner)
+            
+    return game.winner()
+
+def useABWithHeuristic(state):
+    table = {}
+    return alphabeta(float('-inf'), float('inf'), state, 6, simpleSumHeuristic, table)[1]
+
+def randomAgent(state):
+    if state.currentPlayer == 0:
+        return state.randomUnit(state.p0bank)
+    return state.randomUnit(state.p1bank)
+
+def minPlayer(state):
+    if state.currentPlayer == 0:
+        return min(state.p0bank)
+    return min(state.p1bank)
