@@ -1,0 +1,80 @@
+from nfl_strategy import NFLStrategy
+import test_qfl
+import math
+import random
+from random import randint
+import time
+
+def calculateRow(position): # Helper method to find the row of the superstate bucket to which position belongs
+    rowVal = position[0]/position[3]
+    if rowVal > 6:
+        return 5
+    if rowVal > 4:
+        return 4
+    if rowVal > 3:
+        return 3
+    if rowVal > 2:
+        return 2
+    if rowVal > 0.5:
+        return 1
+    return 0
+    
+
+def calculateCol(position): # Helper method to find the col of the superstate bucket to which position belongs
+    colVal = position[2]/position[1]
+    if colVal > 6:
+        return 5
+    if colVal > 3:
+        return 4
+    if colVal > 2.6:
+        return 3
+    if colVal > 2.4:
+        return 2
+    if colVal > 1.5:
+        return 1
+    return 0
+
+
+def q_learn(TMD, timeLim):
+    epsilon = 0.10
+    qStore = [[[0 for k in range(TMD.offensive_playbook_size())] for j in range(6)] for i in range(6)] # 6x6 grid of superstates
+    alphaBank = [[1 for l in range(6)] for m in range(6)] # bank of alpha values
+
+    start = time.time() # begin timing, go until time limit is almost reached
+    while time.time() - start < (timeLim - 0.01): 
+        currentPos = TMD.initial_position()
+        while not TMD.game_over(currentPos):
+
+            curRow = calculateRow(currentPos)
+            curCol = calculateCol(currentPos)
+
+            if random.random() < epsilon: # Epsilon greedy selection of the option that currently looks the best
+                action = randint(0, TMD.offensive_playbook_size() - 1) # Random selection
+            else:
+                action = qStore[curRow][curCol].index(max(qStore[curRow][curCol]))
+            
+            newPos = TMD.result(currentPos, action)[0] # Observe transition
+
+            if TMD.win(newPos): # if the new state is a win
+                qStore[curRow][curCol][action] += alphaBank[curRow][curCol] * (1 - qStore[curRow][curCol][action])
+            else:
+                if TMD.game_over(newPos): # if the new state is a loss
+                    qStore[curRow][curCol][action] += alphaBank[curRow][curCol] * (-1 - qStore[curRow][curCol][action])
+                else: # if the new state is not terminal
+                    newRow = calculateRow(newPos) # Calculate new bucket
+                    newCol = calculateCol(newPos)
+                    qStore[curRow][curCol][action] += alphaBank[curRow][curCol] * (max(qStore[newRow][newCol]) - qStore[curRow][curCol][action])
+
+
+            alphaBank[curRow][curCol] *= 0.9999 # update learning rate
+
+            currentPos = newPos # update position
+
+
+    def policy(position):
+        row = calculateRow(position)
+        col = calculateCol(position)
+        return qStore[row][col].index(max(qStore[row][col]))
+
+    return policy
+
